@@ -5,16 +5,12 @@
 /// $ docker run -p 8000:8000 amazon/dynamodb-local
 /// ```
 use dynomite::{
-    attr_map,
     dynamodb::{
         AttributeDefinition, CreateTableInput, DynamoDb, DynamoDbClient, GetItemInput,
-        KeySchemaElement, ProvisionedThroughput, PutItemInput, ScanInput,
+        KeySchemaElement, ProvisionedThroughput, PutItemInput,
     },
-    retry::Policy,
-    DynamoDbExt, FromAttributes, Item, Retries,
+    FromAttributes, Item,
 };
-
-use futures::{Future, Stream};
 
 #[cfg(feature = "default")]
 use rusoto_core_default::Region;
@@ -41,8 +37,7 @@ fn main() {
     let client = DynamoDbClient::new(Region::Custom {
         name: "us-east-1".into(),
         endpoint: "http://localhost:8000".into(),
-    })
-    .with_retries(Policy::default());
+    });
 
     // create a book table with a single string (S) primary key.
     // if this table does not already exists
@@ -102,39 +97,14 @@ fn main() {
         )
     );
 
-    // scan through all pages of results in the books table for books who's title is "rust"
-    println!(
-        "scan result {:#?}",
-        rt.block_on(
-            client
-                .clone()
-                .scan_pages(ScanInput {
-                    limit: Some(1), // to demonstrate we're getting through more than one page
-                    table_name: table_name.clone(),
-                    filter_expression: Some("title = :title".into()),
-                    expression_attribute_values: Some(attr_map!(
-                        ":title" => "rust".to_string()
-                    )),
-                    ..ScanInput::default()
-                })
-                .for_each(|item| {
-                    println!("stream_scan() item {:#?}", Book::from_attrs(item));
-                    Ok(())
-                }) // attempt to convert a attribute map to a book type
-        ),
-    );
-
     // get the "rust' book by the Book type's generated key
     println!(
         "get_item() result {:#?}",
-        rt.block_on(
-            client
-                .get_item(GetItemInput {
-                    table_name: table_name,
-                    key: book.key(), // get a book by key
-                    ..GetItemInput::default()
-                })
-                .map(|result| result.item.map(Book::from_attrs)) // attempt to convert a attribute map to a book type
-        )
+        rt.block_on(client.get_item(GetItemInput {
+            table_name: table_name,
+            key: book.key(), // get a book by key
+            ..GetItemInput::default()
+        }))
+        .map(|result| result.item.map(Book::from_attrs)) // attempt to convert a attribute map to a book type
     );
 }

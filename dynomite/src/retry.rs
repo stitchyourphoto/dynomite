@@ -1,6 +1,6 @@
 //! Retry functionality
 //!
-//! Specifcally this implementation focuses on honoring [these documented DynamoDB retryable errors](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Programming.Errors.html#Programming.Errors.MessagesAndCodes)
+//! Specifically this implementation focuses on honoring [these documented DynamoDB retryable errors](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Programming.Errors.html#Programming.Errors.MessagesAndCodes)
 //! on top AWS's general recommendations of for [retrying API requests](https://docs.aws.amazon.com/general/latest/gr/api-retries.html).
 //!
 //! # examples
@@ -21,21 +21,21 @@ use crate::dynamodb::*;
 use futures_backoff::{Condition, Strategy};
 use log::debug;
 #[cfg(feature = "default")]
-use rusoto_core_default::{RusotoError, RusotoFuture};
+use rusoto_core_default::RusotoError;
 #[cfg(feature = "rustls")]
-use rusoto_core_rustls::{RusotoError, RusotoFuture};
-use std::{sync::Arc, time::Duration};
+use rusoto_core_rustls::RusotoError;
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 /// Preconfigured retry policies for failable operations
 ///
-/// A `Default` impl of retrying 5 times with an exponential backoff of 100 milliseconds
+/// A `Default` impl of retrying 5 times with an exponential back-off of 100 milliseconds
 #[derive(Clone, PartialEq, Debug)]
 pub enum Policy {
     /// Limited number of times to retry
     Limit(usize),
     /// Limited number of times to retry with fixed pause between retries
     Pause(usize, Duration),
-    /// Limited number of times to retry with an expoential pause between retries
+    /// Limited number of times to retry with an exponential pause between retries
     Exponential(usize, Duration),
 }
 
@@ -61,8 +61,7 @@ impl Into<Strategy> for Policy {
     }
 }
 
-/// Predicate trait that determines if an impl
-/// type is retryable
+/// Predicate trait that determines if an impl type is retryable
 trait Retry {
     /// Return true if type is retryable
     fn retryable(&self) -> bool;
@@ -147,12 +146,13 @@ where
 
     /// Retry and operation based on this clients configured retry policy
     #[inline]
-    fn retry<F, T, R>(
-        &self,
+    fn retry<'life0, 'async_trait, F, T, R>(
+        &'life0 self,
         operation: F,
-    ) -> RusotoFuture<T, R>
+    ) -> Pin<Box<dyn Future<Output = Result<T, RusotoError<R>>> + Send + 'async_trait>>
     where
-        F: FnMut() -> RusotoFuture<T, R> + Send + 'static,
+        F: FnMut()
+            -> Pin<Box<dyn Future<Output = Result<T, RusotoError<R>>> + Send + 'async_trait>>,
         R: Retry,
     {
         RusotoFuture::from_future(self.inner.strategy.retry_if(operation, Counter(0)))
@@ -163,288 +163,787 @@ impl<D> DynamoDb for RetryingDynamoDb<D>
 where
     D: DynamoDb + Sync + Send + 'static,
 {
-    fn batch_get_item(
-        &self,
+    fn batch_get_item<'life0, 'async_trait>(
+        &'life0 self,
         input: BatchGetItemInput,
-    ) -> RusotoFuture<BatchGetItemOutput, BatchGetItemError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<BatchGetItemOutput, RusotoError<BatchGetItemError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.batch_get_item(input.clone()))
     }
 
-    fn batch_write_item(
-        &self,
+    fn batch_write_item<'life0, 'async_trait>(
+        &'life0 self,
         input: BatchWriteItemInput,
-    ) -> RusotoFuture<BatchWriteItemOutput, BatchWriteItemError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<BatchWriteItemOutput, RusotoError<BatchWriteItemError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.batch_write_item(input.clone()))
     }
 
-    fn create_backup(
-        &self,
+    fn create_backup<'life0, 'async_trait>(
+        &'life0 self,
         input: CreateBackupInput,
-    ) -> RusotoFuture<CreateBackupOutput, CreateBackupError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<CreateBackupOutput, RusotoError<CreateBackupError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.create_backup(input.clone()))
     }
 
-    fn create_global_table(
-        &self,
+    fn create_global_table<'life0, 'async_trait>(
+        &'life0 self,
         input: CreateGlobalTableInput,
-    ) -> RusotoFuture<CreateGlobalTableOutput, CreateGlobalTableError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<CreateGlobalTableOutput, RusotoError<CreateGlobalTableError>>,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.create_global_table(input.clone()))
     }
 
-    fn create_table(
-        &self,
+    fn create_table<'life0, 'async_trait>(
+        &'life0 self,
         input: CreateTableInput,
-    ) -> RusotoFuture<CreateTableOutput, CreateTableError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<CreateTableOutput, RusotoError<CreateTableError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.create_table(input.clone()))
     }
 
-    fn delete_backup(
-        &self,
+    fn delete_backup<'life0, 'async_trait>(
+        &'life0 self,
         input: DeleteBackupInput,
-    ) -> RusotoFuture<DeleteBackupOutput, DeleteBackupError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<DeleteBackupOutput, RusotoError<DeleteBackupError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.delete_backup(input.clone()))
     }
 
-    fn delete_item(
-        &self,
+    fn delete_item<'life0, 'async_trait>(
+        &'life0 self,
         input: DeleteItemInput,
-    ) -> RusotoFuture<DeleteItemOutput, DeleteItemError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<DeleteItemOutput, RusotoError<DeleteItemError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.delete_item(input.clone()))
     }
 
-    fn delete_table(
-        &self,
+    fn delete_table<'life0, 'async_trait>(
+        &'life0 self,
         input: DeleteTableInput,
-    ) -> RusotoFuture<DeleteTableOutput, DeleteTableError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<DeleteTableOutput, RusotoError<DeleteTableError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.delete_table(input.clone()))
     }
 
-    fn describe_backup(
-        &self,
+    fn describe_backup<'life0, 'async_trait>(
+        &'life0 self,
         input: DescribeBackupInput,
-    ) -> RusotoFuture<DescribeBackupOutput, DescribeBackupError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<DescribeBackupOutput, RusotoError<DescribeBackupError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.describe_backup(input.clone()))
     }
 
-    fn describe_continuous_backups(
-        &self,
+    fn describe_continuous_backups<'life0, 'async_trait>(
+        &'life0 self,
         input: DescribeContinuousBackupsInput,
-    ) -> RusotoFuture<DescribeContinuousBackupsOutput, DescribeContinuousBackupsError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        DescribeContinuousBackupsOutput,
+                        RusotoError<DescribeContinuousBackupsError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.describe_continuous_backups(input.clone()))
     }
 
-    fn describe_global_table(
-        &self,
+    fn describe_global_table<'life0, 'async_trait>(
+        &'life0 self,
         input: DescribeGlobalTableInput,
-    ) -> RusotoFuture<DescribeGlobalTableOutput, DescribeGlobalTableError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        DescribeGlobalTableOutput,
+                        RusotoError<DescribeGlobalTableError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.describe_global_table(input.clone()))
     }
 
-    fn describe_global_table_settings(
-        &self,
+    fn describe_global_table_settings<'life0, 'async_trait>(
+        &'life0 self,
         input: DescribeGlobalTableSettingsInput,
-    ) -> RusotoFuture<DescribeGlobalTableSettingsOutput, DescribeGlobalTableSettingsError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        DescribeGlobalTableSettingsOutput,
+                        RusotoError<DescribeGlobalTableSettingsError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.describe_global_table_settings(input.clone()))
     }
 
-    fn describe_limits(&self) -> RusotoFuture<DescribeLimitsOutput, DescribeLimitsError> {
+    fn describe_limits<'life0, 'async_trait>(
+        &'life0 self
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<DescribeLimitsOutput, RusotoError<DescribeLimitsError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.describe_limits())
     }
 
-    fn describe_table(
-        &self,
+    fn describe_table<'life0, 'async_trait>(
+        &'life0 self,
         input: DescribeTableInput,
-    ) -> RusotoFuture<DescribeTableOutput, DescribeTableError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<DescribeTableOutput, RusotoError<DescribeTableError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.describe_table(input.clone()))
     }
 
-    fn describe_time_to_live(
-        &self,
+    fn describe_time_to_live<'life0, 'async_trait>(
+        &'life0 self,
         input: DescribeTimeToLiveInput,
-    ) -> RusotoFuture<DescribeTimeToLiveOutput, DescribeTimeToLiveError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<DescribeTimeToLiveOutput, RusotoError<DescribeTimeToLiveError>>,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.describe_time_to_live(input.clone()))
     }
 
-    fn get_item(
-        &self,
+    fn get_item<'life0, 'async_trait>(
+        &'life0 self,
         input: GetItemInput,
-    ) -> RusotoFuture<GetItemOutput, GetItemError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GetItemOutput, RusotoError<GetItemError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.get_item(input.clone()))
     }
 
-    fn list_backups(
-        &self,
+    fn list_backups<'life0, 'async_trait>(
+        &'life0 self,
         input: ListBackupsInput,
-    ) -> RusotoFuture<ListBackupsOutput, ListBackupsError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<ListBackupsOutput, RusotoError<ListBackupsError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.list_backups(input.clone()))
     }
 
-    fn list_global_tables(
-        &self,
+    fn list_global_tables<'life0, 'async_trait>(
+        &'life0 self,
         input: ListGlobalTablesInput,
-    ) -> RusotoFuture<ListGlobalTablesOutput, ListGlobalTablesError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<ListGlobalTablesOutput, RusotoError<ListGlobalTablesError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.list_global_tables(input.clone()))
     }
 
-    fn list_tables(
-        &self,
+    fn list_tables<'life0, 'async_trait>(
+        &'life0 self,
         input: ListTablesInput,
-    ) -> RusotoFuture<ListTablesOutput, ListTablesError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<ListTablesOutput, RusotoError<ListTablesError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.list_tables(input.clone()))
     }
 
-    fn list_tags_of_resource(
-        &self,
+    fn list_tags_of_resource<'life0, 'async_trait>(
+        &'life0 self,
         input: ListTagsOfResourceInput,
-    ) -> RusotoFuture<ListTagsOfResourceOutput, ListTagsOfResourceError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ListTagsOfResourceOutput, RusotoError<ListTagsOfResourceError>>,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.list_tags_of_resource(input.clone()))
     }
 
-    fn put_item(
-        &self,
+    fn put_item<'life0, 'async_trait>(
+        &'life0 self,
         input: PutItemInput,
-    ) -> RusotoFuture<PutItemOutput, PutItemError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<PutItemOutput, RusotoError<PutItemError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.put_item(input.clone()))
     }
 
-    fn query(
-        &self,
+    fn query<'life0, 'async_trait>(
+        &'life0 self,
         input: QueryInput,
-    ) -> RusotoFuture<QueryOutput, QueryError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<QueryOutput, RusotoError<QueryError>>> + Send + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.query(input.clone()))
     }
 
-    fn restore_table_from_backup(
-        &self,
+    fn restore_table_from_backup<'life0, 'async_trait>(
+        &'life0 self,
         input: RestoreTableFromBackupInput,
-    ) -> RusotoFuture<RestoreTableFromBackupOutput, RestoreTableFromBackupError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        RestoreTableFromBackupOutput,
+                        RusotoError<RestoreTableFromBackupError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.restore_table_from_backup(input.clone()))
     }
 
-    fn restore_table_to_point_in_time(
-        &self,
+    fn restore_table_to_point_in_time<'life0, 'async_trait>(
+        &'life0 self,
         input: RestoreTableToPointInTimeInput,
-    ) -> RusotoFuture<RestoreTableToPointInTimeOutput, RestoreTableToPointInTimeError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        RestoreTableToPointInTimeOutput,
+                        RusotoError<RestoreTableToPointInTimeError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.restore_table_to_point_in_time(input.clone()))
     }
 
-    fn scan(
-        &self,
+    fn scan<'life0, 'async_trait>(
+        &'life0 self,
         input: ScanInput,
-    ) -> RusotoFuture<ScanOutput, ScanError> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<ScanOutput, RusotoError<ScanError>>> + Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.scan(input.clone()))
     }
 
-    fn tag_resource(
-        &self,
+    fn tag_resource<'life0, 'async_trait>(
+        &'life0 self,
         input: TagResourceInput,
-    ) -> RusotoFuture<(), TagResourceError> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<(), RusotoError<TagResourceError>>> + Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.tag_resource(input.clone()))
     }
 
-    fn untag_resource(
-        &self,
+    fn untag_resource<'life0, 'async_trait>(
+        &'life0 self,
         input: UntagResourceInput,
-    ) -> RusotoFuture<(), UntagResourceError> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<(), RusotoError<UntagResourceError>>> + Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.untag_resource(input.clone()))
     }
 
-    fn update_continuous_backups(
-        &self,
+    fn update_continuous_backups<'life0, 'async_trait>(
+        &'life0 self,
         input: UpdateContinuousBackupsInput,
-    ) -> RusotoFuture<UpdateContinuousBackupsOutput, UpdateContinuousBackupsError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        UpdateContinuousBackupsOutput,
+                        RusotoError<UpdateContinuousBackupsError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.update_continuous_backups(input.clone()))
     }
 
-    fn update_global_table(
-        &self,
+    fn update_global_table<'life0, 'async_trait>(
+        &'life0 self,
         input: UpdateGlobalTableInput,
-    ) -> RusotoFuture<UpdateGlobalTableOutput, UpdateGlobalTableError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<UpdateGlobalTableOutput, RusotoError<UpdateGlobalTableError>>,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.update_global_table(input.clone()))
     }
 
-    fn update_global_table_settings(
-        &self,
+    fn update_global_table_settings<'life0, 'async_trait>(
+        &'life0 self,
         input: UpdateGlobalTableSettingsInput,
-    ) -> RusotoFuture<UpdateGlobalTableSettingsOutput, UpdateGlobalTableSettingsError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        UpdateGlobalTableSettingsOutput,
+                        RusotoError<UpdateGlobalTableSettingsError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.update_global_table_settings(input.clone()))
     }
 
-    fn update_item(
-        &self,
+    fn update_item<'life0, 'async_trait>(
+        &'life0 self,
         input: UpdateItemInput,
-    ) -> RusotoFuture<UpdateItemOutput, UpdateItemError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<UpdateItemOutput, RusotoError<UpdateItemError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.update_item(input.clone()))
     }
 
-    fn update_table(
-        &self,
+    fn update_table<'life0, 'async_trait>(
+        &'life0 self,
         input: UpdateTableInput,
-    ) -> RusotoFuture<UpdateTableOutput, UpdateTableError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<UpdateTableOutput, RusotoError<UpdateTableError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.update_table(input.clone()))
     }
 
-    fn update_time_to_live(
-        &self,
+    fn update_time_to_live<'life0, 'async_trait>(
+        &'life0 self,
         input: UpdateTimeToLiveInput,
-    ) -> RusotoFuture<UpdateTimeToLiveOutput, UpdateTimeToLiveError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<UpdateTimeToLiveOutput, RusotoError<UpdateTimeToLiveError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.update_time_to_live(input.clone()))
     }
 
-    fn describe_endpoints(
-        &self
-    ) -> RusotoFuture<DescribeEndpointsResponse, DescribeEndpointsError> {
+    fn describe_endpoints<'life0, 'async_trait>(
+        &'life0 self
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<DescribeEndpointsResponse, RusotoError<DescribeEndpointsError>>,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         // no apparent retryable errors
         self.inner.client.describe_endpoints()
     }
 
-    fn transact_get_items(
-        &self,
+    fn transact_get_items<'life0, 'async_trait>(
+        &'life0 self,
         input: TransactGetItemsInput,
-    ) -> RusotoFuture<TransactGetItemsOutput, TransactGetItemsError> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<TransactGetItemsOutput, RusotoError<TransactGetItemsError>>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.transact_get_items(input.clone()))
     }
 
-    fn transact_write_items(
-        &self,
+    fn transact_write_items<'life0, 'async_trait>(
+        &'life0 self,
         input: TransactWriteItemsInput,
-    ) -> RusotoFuture<TransactWriteItemsOutput, TransactWriteItemsError> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<TransactWriteItemsOutput, RusotoError<TransactWriteItemsError>>,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
         let inner = self.inner.clone();
         self.retry(move || inner.client.transact_write_items(input.clone()))
+    }
+
+    fn describe_contributor_insights<'life0, 'async_trait>(
+        &'life0 self,
+        input: DescribeContributorInsightsInput,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        DescribeContributorInsightsOutput,
+                        RusotoError<DescribeContributorInsightsError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        let inner = self.inner.clone();
+        self.retry(move || inner.client.describe_contributor_insights(input.clone()))
+    }
+
+    fn describe_table_replica_auto_scaling<'life0, 'async_trait>(
+        &'life0 self,
+        input: DescribeTableReplicaAutoScalingInput,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        DescribeTableReplicaAutoScalingOutput,
+                        RusotoError<DescribeTableReplicaAutoScalingError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        let inner = self.inner.clone();
+        self.retry(move || {
+            inner
+                .client
+                .describe_table_replica_auto_scaling(input.clone())
+        })
+    }
+
+    fn list_contributor_insights<'life0, 'async_trait>(
+        &'life0 self,
+        input: ListContributorInsightsInput,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        ListContributorInsightsOutput,
+                        RusotoError<ListContributorInsightsError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        unimplemented!()
+    }
+
+    fn update_contributor_insights<'life0, 'async_trait>(
+        &'life0 self,
+        input: UpdateContributorInsightsInput,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        UpdateContributorInsightsOutput,
+                        RusotoError<UpdateContributorInsightsError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        let inner = self.inner.clone();
+        self.retry(move || inner.client.update_contributor_insights(input.clone()))
+    }
+
+    fn update_table_replica_auto_scaling<'life0, 'async_trait>(
+        &'life0 self,
+        input: UpdateTableReplicaAutoScalingInput,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        UpdateTableReplicaAutoScalingOutput,
+                        RusotoError<UpdateTableReplicaAutoScalingError>,
+                    >,
+                > + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        let inner = self.inner.clone();
+        self.retry(move || {
+            inner
+                .client
+                .update_table_replica_auto_scaling(input.clone())
+        })
     }
 }
 
@@ -650,7 +1149,7 @@ mod tests {
 
     #[test]
     fn policy_impl_into_for_strategy() {
-        // no great way to assert partialeq on stategy
+        // no great way to assert partialeq on strategy
         // just just test that we can
         let _: Strategy = Policy::default().into();
     }

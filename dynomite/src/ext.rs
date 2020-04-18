@@ -1,16 +1,17 @@
-//! Extention interfaces for rusoto `DynamoDb`
+//! Extension interfaces for Rusoto `DynamoDb`
 
 use crate::dynamodb::{
     AttributeValue, BackupSummary, DynamoDb, ListBackupsError, ListBackupsInput, ListTablesError,
     ListTablesInput, QueryError, QueryInput, ScanError, ScanInput,
 };
-use futures::{stream, Future, Stream};
+use futures::{stream, Stream};
 
+use futures_util::FutureExt;
 #[cfg(feature = "default")]
 use rusoto_core_default::RusotoError;
 #[cfg(feature = "rustls")]
 use rusoto_core_rustls::RusotoError;
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future};
 
 type DynomiteStream<I, E> = Box<dyn Stream<Item = I, Error = RusotoError<E>> + Send>;
 
